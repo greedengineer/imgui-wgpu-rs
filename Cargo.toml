@@ -1,0 +1,13 @@
+[package]
+name = "imgui-wgpu-rs"
+version = "0.1.0"
+authors = ["Greed <greedengineer4321@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+imgui = "0.4.0"
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs.git" }
+libc = "0.2.72"
+bytemuck = "1.2.0"
