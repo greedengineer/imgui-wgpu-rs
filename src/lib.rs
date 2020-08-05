@@ -1,3 +1,5 @@
+use std::borrow::Cow::Borrowed;
+
 use imgui::internal::RawWrapper;
 use imgui::DrawIdx;
 use imgui::DrawVert;
@@ -72,7 +74,7 @@ impl Texture {
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
-            entries: &[
+            entries:Borrowed(&[
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&texture_view),
@@ -81,7 +83,7 @@ impl Texture {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
-            ],
+            ]),
             label: None,
         });
         Self { bind_group }
@@ -204,19 +206,19 @@ impl Renderer {
         let uniform_buffer_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[wgpu::BindGroupLayoutEntry::new(
+                entries: Borrowed(&[wgpu::BindGroupLayoutEntry::new(
                     0,
                     wgpu::ShaderStage::VERTEX,
                     wgpu::BindingType::UniformBuffer {
                         dynamic: false,
                         min_binding_size: wgpu::BufferSize::new(4 * 16),
                     },
-                )],
+                )]),
             });
         let texture_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[
+                entries: Borrowed(&[
                     wgpu::BindGroupLayoutEntry::new(
                         0,
                         wgpu::ShaderStage::FRAGMENT,
@@ -231,12 +233,12 @@ impl Renderer {
                         wgpu::ShaderStage::FRAGMENT,
                         wgpu::BindingType::Sampler { comparison: false },
                     ),
-                ],
+                ]),
             });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[&uniform_buffer_bind_layout, &texture_bind_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: Borrowed(&[&uniform_buffer_bind_layout, &texture_bind_layout]),
+            push_constant_ranges: Borrowed(&[]),
         });
 
         let vs_module = device.create_shader_module(wgpu::include_spirv!("imgui.vert.spv"));
@@ -246,21 +248,19 @@ impl Renderer {
             layout: &pipeline_layout,
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
-                entry_point: "main",
+                entry_point: Borrowed("main"),
             },
             fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
                 module: &fs_module,
-                entry_point: "main",
+                entry_point: Borrowed("main"),
             }),
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Cw,
                 cull_mode: wgpu::CullMode::None,
-                depth_bias: 0,
-                depth_bias_slope_scale: 0.0,
-                depth_bias_clamp: 0.0,
+                ..Default::default()
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            color_states: &[wgpu::ColorStateDescriptor {
+            color_states: Borrowed(&[wgpu::ColorStateDescriptor {
                 format: swap_chain_texture_format,
                 color_blend: wgpu::BlendDescriptor {
                     src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -273,14 +273,14 @@ impl Renderer {
                     operation: wgpu::BlendOperation::Add,
                 },
                 write_mask: wgpu::ColorWrite::ALL,
-            }],
+            }]),
             depth_stencil_state: None,
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                vertex_buffers: Borrowed(&[wgpu::VertexBufferDescriptor {
                     stride: size_of!(DrawVert) as wgpu::BufferAddress,
                     step_mode: wgpu::InputStepMode::Vertex,
-                    attributes: &[
+                    attributes: Borrowed(&[
                         wgpu::VertexAttributeDescriptor {
                             format: wgpu::VertexFormat::Float2,
                             offset: unsafe { offset_of!(DrawVert, pos) } as u64,
@@ -296,8 +296,8 @@ impl Renderer {
                             offset: unsafe { offset_of!(DrawVert, col) } as u64,
                             shader_location: 2,
                         },
-                    ],
-                }],
+                    ]),
+                }]),
             },
             sample_count: 1,
             sample_mask: !0,
@@ -323,10 +323,10 @@ impl Renderer {
         });
         let uniform_buffer_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_buffer_bind_layout,
-            entries: &[wgpu::BindGroupEntry {
+            entries: Borrowed(&[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-            }],
+            }]),
             label: None,
         });
         let font_texture = {
