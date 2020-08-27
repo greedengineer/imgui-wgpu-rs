@@ -1,5 +1,3 @@
-use std::borrow::Cow::Borrowed;
-
 use imgui::internal::RawWrapper;
 use imgui::DrawIdx;
 use imgui::DrawVert;
@@ -48,7 +46,7 @@ impl Texture {
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
-        let texture_view = texture.create_default_view();
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         queue.write_texture(
             wgpu::TextureCopyView {
                 texture: &texture,
@@ -74,7 +72,7 @@ impl Texture {
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
-            entries:Borrowed(&[
+            entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&texture_view),
@@ -83,7 +81,7 @@ impl Texture {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
-            ]),
+            ],
             label: None,
         });
         Self { bind_group }
@@ -181,8 +179,7 @@ impl Renderer {
                                 .abs()
                                 .ceil() as u32,
                         );
-                        render_pass
-                            .set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                        render_pass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         let texture = self.textures.get(cmd_params.texture_id).unwrap();
                         render_pass.set_bind_group(1, texture.bind_group(), &[]);
                         let idx_end = idx_begin + count as u32;
@@ -206,53 +203,58 @@ impl Renderer {
         let uniform_buffer_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: Borrowed(&[wgpu::BindGroupLayoutEntry::new(
-                    0,
-                    wgpu::ShaderStage::VERTEX,
-                    wgpu::BindingType::UniformBuffer {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer {
                         dynamic: false,
                         min_binding_size: wgpu::BufferSize::new(4 * 16),
                     },
-                )]),
+                    count: None,
+                }],
             });
         let texture_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: Borrowed(&[
-                    wgpu::BindGroupLayoutEntry::new(
-                        0,
-                        wgpu::ShaderStage::FRAGMENT,
-                        wgpu::BindingType::SampledTexture {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::SampledTexture {
                             multisampled: false,
                             component_type: wgpu::TextureComponentType::Float,
                             dimension: wgpu::TextureViewDimension::D2,
                         },
-                    ),
-                    wgpu::BindGroupLayoutEntry::new(
-                        1,
-                        wgpu::ShaderStage::FRAGMENT,
-                        wgpu::BindingType::Sampler { comparison: false },
-                    ),
-                ]),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler { comparison: false },
+                        count: None,
+                    },
+                ],
             });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: Borrowed(&[&uniform_buffer_bind_layout, &texture_bind_layout]),
-            push_constant_ranges: Borrowed(&[]),
+            label: None,
+            bind_group_layouts: &[&uniform_buffer_bind_layout, &texture_bind_layout],
+            push_constant_ranges: &[],
         });
 
         let vs_module = device.create_shader_module(wgpu::include_spirv!("imgui.vert.spv"));
         let fs_module = device.create_shader_module(wgpu::include_spirv!("imgui.frag.spv"));
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &pipeline_layout,
+            label: None,
+            layout: Some(&pipeline_layout),
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
-                entry_point: Borrowed("main"),
+                entry_point: "main",
             },
             fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
                 module: &fs_module,
-                entry_point: Borrowed("main"),
+                entry_point: "main",
             }),
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Cw,
@@ -260,7 +262,7 @@ impl Renderer {
                 ..Default::default()
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            color_states: Borrowed(&[wgpu::ColorStateDescriptor {
+            color_states: &[wgpu::ColorStateDescriptor {
                 format: swap_chain_texture_format,
                 color_blend: wgpu::BlendDescriptor {
                     src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -273,14 +275,14 @@ impl Renderer {
                     operation: wgpu::BlendOperation::Add,
                 },
                 write_mask: wgpu::ColorWrite::ALL,
-            }]),
+            }],
             depth_stencil_state: None,
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: Borrowed(&[wgpu::VertexBufferDescriptor {
+                vertex_buffers: &[wgpu::VertexBufferDescriptor {
                     stride: size_of!(DrawVert) as wgpu::BufferAddress,
                     step_mode: wgpu::InputStepMode::Vertex,
-                    attributes: Borrowed(&[
+                    attributes: &[
                         wgpu::VertexAttributeDescriptor {
                             format: wgpu::VertexFormat::Float2,
                             offset: unsafe { offset_of!(DrawVert, pos) } as u64,
@@ -296,8 +298,8 @@ impl Renderer {
                             offset: unsafe { offset_of!(DrawVert, col) } as u64,
                             shader_location: 2,
                         },
-                    ]),
-                }]),
+                    ],
+                }],
             },
             sample_count: 1,
             sample_mask: !0,
@@ -323,10 +325,10 @@ impl Renderer {
         });
         let uniform_buffer_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_buffer_bind_layout,
-            entries: Borrowed(&[wgpu::BindGroupEntry {
+            entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-            }]),
+            }],
             label: None,
         });
         let font_texture = {
@@ -353,9 +355,7 @@ impl Renderer {
             uniform_buffer_bind_group,
             indices: Vec::with_capacity({ MAX_INDEX_COUNT + 16 } as usize),
             vertices: Vec::with_capacity({ MAX_VERTEX_COUNT + 16 } as usize),
-            indices_byte_buffer: Vec::with_capacity(
-                MAX_INDEX_COUNT as usize * size_of!(DrawIdx),
-            ),
+            indices_byte_buffer: Vec::with_capacity(MAX_INDEX_COUNT as usize * size_of!(DrawIdx)),
             vertices_byte_buffer: Vec::with_capacity(
                 MAX_VERTEX_COUNT as usize * size_of!(DrawVert),
             ),
