@@ -5,6 +5,17 @@ use imgui::DrawVert;
 const MAX_INDEX_COUNT: u64 = std::u16::MAX as u64;
 const MAX_VERTEX_COUNT: u64 = std::u16::MAX as u64;
 
+#[derive(Clone, Copy)]
+struct Vertex {
+    pub pos: [f32; 2],
+    pub uv: [f32; 2],
+    pub col: [u8; 4],
+}
+
+unsafe impl bytemuck::Zeroable for Vertex {}
+
+unsafe impl bytemuck::Pod for Vertex {}
+
 macro_rules! size_of {
     ($T:ty) => {
         std::mem::size_of::<$T>()
@@ -30,7 +41,7 @@ impl Texture {
         bind_group_layout: &wgpu::BindGroupLayout,
         width: u32,
         height: u32,
-        data: &[u8],
+        pixels: &[u8],
     ) -> Self {
         let texture_extent = wgpu::Extent3d {
             width,
@@ -53,7 +64,7 @@ impl Texture {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            data,
+            pixels,
             wgpu::TextureDataLayout {
                 offset: 0,
                 bytes_per_row: (width * 4) as u32,
@@ -89,7 +100,6 @@ impl Texture {
 }
 
 pub struct Renderer {
-    uniform_buffer_bind_layout: wgpu::BindGroupLayout,
     texture_bind_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
@@ -98,8 +108,6 @@ pub struct Renderer {
     uniform_buffer_bind_group: wgpu::BindGroup,
     indices: Vec<DrawIdx>,
     vertices: Vec<DrawVert>,
-    indices_byte_buffer: Vec<u8>,
-    vertices_byte_buffer: Vec<u8>,
     textures: imgui::Textures<Texture>,
 }
 impl Renderer {
@@ -120,6 +128,28 @@ impl Renderer {
             data,
         );
         self.textures.insert(texture)
+    }
+    pub fn reload_font_texture(
+        &mut self,
+        imgui: &mut imgui::Context,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        let mut fonts = imgui.fonts();
+
+        self.textures.remove(fonts.tex_id);
+
+        let texture_data = fonts.build_rgba32_texture();
+        let texture = Texture::new(
+            device,
+            queue,
+            &self.texture_bind_layout,
+            texture_data.width,
+            texture_data.height,
+            texture_data.data,
+        );
+        fonts.tex_id = self.textures.insert(texture);
+        fonts.clear_tex_data();
     }
     pub fn render<'a>(
         &'a mut self,
@@ -331,22 +361,7 @@ impl Renderer {
             }],
             label: None,
         });
-        let font_texture = {
-            let mut fonts = imgui.fonts();
-            let texture = fonts.build_rgba32_texture();
-            Texture::new(
-                device,
-                queue,
-                &texture_bind_layout,
-                texture.width,
-                texture.height,
-                texture.data,
-            )
-        };
-        let mut textures = imgui::Textures::<Texture>::new();
-        textures.insert(font_texture);
-        Self {
-            uniform_buffer_bind_layout,
+        let mut renderer = Self {
             texture_bind_layout,
             pipeline,
             index_buffer,
@@ -355,36 +370,23 @@ impl Renderer {
             uniform_buffer_bind_group,
             indices: Vec::with_capacity({ MAX_INDEX_COUNT + 16 } as usize),
             vertices: Vec::with_capacity({ MAX_VERTEX_COUNT + 16 } as usize),
-            indices_byte_buffer: Vec::with_capacity(MAX_INDEX_COUNT as usize * size_of!(DrawIdx)),
-            vertices_byte_buffer: Vec::with_capacity(
-                MAX_VERTEX_COUNT as usize * size_of!(DrawVert),
-            ),
-            textures,
-        }
+            textures: imgui::Textures::<Texture>::new(),
+        };
+        renderer.reload_font_texture(imgui, device, queue);
+        renderer
     }
     fn upload_buffers(&mut self, queue: &wgpu::Queue) {
-        let mut size = MAX_INDEX_COUNT as usize * size_of!(DrawIdx);
-        size += 4 - (size % 4);
-        self.indices_byte_buffer.resize(size, 0);
-        unsafe {
-            libc::memcpy(
-                self.indices_byte_buffer.as_mut_ptr() as *mut libc::c_void,
-                self.indices.as_ptr() as *const libc::c_void,
-                self.indices.len() * size_of!(DrawIdx),
-            );
-        }
-        queue.write_buffer(&self.index_buffer, 0, self.indices_byte_buffer.as_slice());
-        size = MAX_VERTEX_COUNT as usize * size_of!(DrawVert);
-        size += 4 - (size % 4);
-        self.vertices_byte_buffer.resize(size, 0);
-        unsafe {
-            libc::memcpy(
-                self.vertices_byte_buffer.as_mut_ptr() as *mut libc::c_void,
-                self.vertices.as_ptr() as *const libc::c_void,
-                self.vertices.len() * size_of!(DrawVert),
-            );
-        }
-        queue.write_buffer(&self.vertex_buffer, 0, self.vertices_byte_buffer.as_slice());
+        queue.write_buffer(
+            &self.index_buffer,
+            0,
+            bytemuck::cast_slice(self.indices.as_slice()),
+        );
+
+        let vertices = unsafe {
+            std::slice::from_raw_parts(self.vertices.as_ptr() as *mut Vertex, self.vertices.len())
+        };
+
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
         self.indices.resize(0, 0);
         self.vertices.resize(
             0,
