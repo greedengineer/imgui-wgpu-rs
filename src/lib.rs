@@ -2,8 +2,8 @@ use imgui::internal::RawWrapper;
 use imgui::DrawIdx;
 use imgui::DrawVert;
 
-const MAX_INDEX_BUFFER_SIZE: u64 = std::u16::MAX as u64;
-const MAX_VERTEX_BUFFER_SIZE: u64 = std::u16::MAX as u64;
+const MAX_INDEX_BUFFER_SIZE: u64 = 1024*1024;
+const MAX_VERTEX_BUFFER_SIZE: u64 = 1024*1024;
 
 #[derive(Clone, Copy)]
 struct Vertex(DrawVert);
