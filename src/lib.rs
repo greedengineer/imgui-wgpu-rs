@@ -2,15 +2,11 @@ use imgui::internal::RawWrapper;
 use imgui::DrawIdx;
 use imgui::DrawVert;
 
-const MAX_INDEX_COUNT: u64 = std::u16::MAX as u64;
-const MAX_VERTEX_COUNT: u64 = std::u16::MAX as u64;
+const MAX_INDEX_BUFFER_SIZE: u64 = std::u16::MAX as u64;
+const MAX_VERTEX_BUFFER_SIZE: u64 = std::u16::MAX as u64;
 
 #[derive(Clone, Copy)]
-struct Vertex {
-    pub pos: [f32; 2],
-    pub uv: [f32; 2],
-    pub col: [u8; 4],
-}
+struct Vertex(DrawVert);
 
 unsafe impl bytemuck::Zeroable for Vertex {}
 
@@ -106,8 +102,8 @@ pub struct Renderer {
     vertex_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     uniform_buffer_bind_group: wgpu::BindGroup,
-    indices: Vec<DrawIdx>,
-    vertices: Vec<DrawVert>,
+    indices_byte_buffer: Vec<u8>,
+    vertices_byte_buffer: Vec<u8>,
     textures: imgui::Textures<Texture>,
 }
 impl Renderer {
@@ -337,13 +333,13 @@ impl Renderer {
         });
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (MAX_INDEX_COUNT + 16) * size_of!(DrawIdx) as u64,
+            size: MAX_INDEX_BUFFER_SIZE,
             usage: wgpu::BufferUsage::INDEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (MAX_VERTEX_COUNT + 16) * size_of!(DrawVert) as u64,
+            size: MAX_VERTEX_BUFFER_SIZE,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
@@ -368,51 +364,45 @@ impl Renderer {
             vertex_buffer,
             uniform_buffer,
             uniform_buffer_bind_group,
-            indices: Vec::with_capacity({ MAX_INDEX_COUNT + 16 } as usize),
-            vertices: Vec::with_capacity({ MAX_VERTEX_COUNT + 16 } as usize),
+            indices_byte_buffer: Vec::with_capacity(MAX_INDEX_BUFFER_SIZE as usize),
+            vertices_byte_buffer: Vec::with_capacity(MAX_VERTEX_BUFFER_SIZE as usize),
             textures: imgui::Textures::<Texture>::new(),
         };
         renderer.reload_font_texture(imgui, device, queue);
         renderer
     }
     fn upload_buffers(&mut self, queue: &wgpu::Queue) {
-        queue.write_buffer(
-            &self.index_buffer,
-            0,
-            bytemuck::cast_slice(self.indices.as_slice()),
-        );
+        let indices_byte_length = self.indices_byte_buffer.len();
+        self.indices_byte_buffer
+            .resize(indices_byte_length + (4 - indices_byte_length % 4), 0);
+        queue.write_buffer(&self.index_buffer, 0, self.indices_byte_buffer.as_slice());
 
-        let vertices = unsafe {
-            std::slice::from_raw_parts(self.vertices.as_ptr() as *mut Vertex, self.vertices.len())
-        };
+        let vertices_byte_length = self.indices_byte_buffer.len();
+        self.vertices_byte_buffer
+            .resize(vertices_byte_length + (4 - vertices_byte_length % 4), 0);
 
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
-        self.indices.resize(0, 0);
-        self.vertices.resize(
-            0,
-            DrawVert {
-                pos: [0.0, 0.0],
-                uv: [0.0, 0.0],
-                col: [0, 0, 0, 0],
-            },
-        );
+        queue.write_buffer(&self.vertex_buffer, 0, self.vertices_byte_buffer.as_slice());
+        self.indices_byte_buffer.resize(0, 0);
+        self.vertices_byte_buffer.resize(0, 0);
     }
     fn append_indices(&mut self, indices: &[DrawIdx]) -> Option<u64> {
-        let offset = self.indices.len() as u64;
-        let count = indices.len() as u64;
-        if offset + count < MAX_INDEX_COUNT {
-            self.indices.append(&mut indices.to_vec());
-            Some(offset)
+        let offset = self.indices_byte_buffer.len();
+        let bytes: &[u8] = bytemuck::cast_slice(indices);
+        if offset + bytes.len() < MAX_INDEX_BUFFER_SIZE as usize {
+            self.indices_byte_buffer.extend_from_slice(bytes);
+            Some((offset / size_of!(DrawIdx)) as u64)
         } else {
             None
         }
     }
     fn append_vertices(&mut self, vertices: &[DrawVert]) -> Option<u64> {
-        let offset = self.vertices.len() as u64;
-        let count = vertices.len() as u64;
-        if offset + count < MAX_VERTEX_COUNT {
-            self.vertices.append(&mut vertices.to_vec());
-            Some(offset)
+        let offset = self.vertices_byte_buffer.len();
+        let vertices =
+            unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *mut Vertex, vertices.len()) };
+        let bytes: &[u8] = bytemuck::cast_slice(vertices);
+        if offset + bytes.len() < MAX_VERTEX_BUFFER_SIZE as usize {
+            self.vertices_byte_buffer.extend_from_slice(bytes);
+            Some((offset / size_of!(DrawVert)) as u64)
         } else {
             None
         }
