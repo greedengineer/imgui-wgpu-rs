@@ -377,7 +377,7 @@ impl Renderer {
             .resize(indices_byte_length + (4 - indices_byte_length % 4), 0);
         queue.write_buffer(&self.index_buffer, 0, self.indices_byte_buffer.as_slice());
 
-        let vertices_byte_length = self.indices_byte_buffer.len();
+        let vertices_byte_length = self.vertices_byte_buffer.len();
         self.vertices_byte_buffer
             .resize(vertices_byte_length + (4 - vertices_byte_length % 4), 0);
 
